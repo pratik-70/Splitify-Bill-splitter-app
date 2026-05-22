@@ -37,6 +37,8 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
 
     var showAddMemberDialog by remember { mutableStateOf(false) }
     var showMembersDialog by remember { mutableStateOf(false) }
+    var showSettlementDialog by remember { mutableStateOf(false) }
+    val settlements by viewModel.settlements.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     if (group == null) {
@@ -44,6 +46,14 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
             Text("Group not found")
         }
         return
+    }
+
+    if (showSettlementDialog) {
+        SettlementDialog(
+            settlements = settlements,
+            usersMap = usersMap,
+            onDismiss = { showSettlementDialog = false }
+        )
     }
 
     if (showMembersDialog) {
@@ -90,8 +100,15 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
                         Icon(Icons.Default.PersonAdd, contentDescription = "Add Member")
                     }
                     IconButton(onClick = { 
-                        viewModel.settleGroup(group.id)
-                        android.widget.Toast.makeText(context, "Group balances settled!", android.widget.Toast.LENGTH_SHORT).show()
+                        viewModel.settleGroup(group.id, 
+                            onSuccess = {
+                                showSettlementDialog = true
+                                android.widget.Toast.makeText(context, "Group balances settled!", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            onError = { error ->
+                                android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
+                            }
+                        )
                     }) {
                         Icon(Icons.Default.CheckCircle, contentDescription = "Settle Up")
                     }
@@ -135,7 +152,17 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = { 
-                                groupId?.let { viewModel.settleGroup(it) }
+                                groupId?.let { 
+                                    viewModel.settleGroup(it,
+                                        onSuccess = {
+                                            showSettlementDialog = true
+                                            android.widget.Toast.makeText(context, "Group balances settled!", android.widget.Toast.LENGTH_SHORT).show()
+                                        },
+                                        onError = { error ->
+                                            android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
+                                        }
+                                    ) 
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             shape = RoundedCornerShape(8.dp)
@@ -270,6 +297,66 @@ fun AddMemberDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel", color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    )
+}
+
+@Composable
+fun SettlementDialog(
+    settlements: List<com.example.splitify.model.Settlement>,
+    usersMap: Map<String, com.example.splitify.model.User>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Settlement Plan") },
+        text = {
+            if (settlements.isEmpty()) {
+                Text("All balances are already settled!")
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(settlements) { settlement ->
+                        val fromUser = usersMap[settlement.fromUserId]?.name ?: "Unknown"
+                        val toUser = usersMap[settlement.toUserId]?.name ?: "Unknown"
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Payment, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        buildString {
+                                            append(fromUser)
+                                            append(" pays ")
+                                            append(toUser)
+                                        },
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        String.format(Locale.US, "₹%.2f", settlement.amount),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Done")
             }
         }
     )

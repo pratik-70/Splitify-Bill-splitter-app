@@ -45,10 +45,10 @@ fun MainScreen() {
     val currentRoute = navBackStackEntry?.destination?.route
 
     val items = listOf(
-        NavigationItem("Overview", Screen.Groups.route, Icons.Default.Home),
-        NavigationItem("Contacts", Screen.Friends.route, Icons.Default.People),
-        NavigationItem("Chart", Screen.Activity.route, Icons.Default.BarChart),
-        NavigationItem("Profile", Screen.Account.route, Icons.Default.Person)
+        NavigationItem("Groups", Screen.Groups.route, Icons.Default.Groups),
+        NavigationItem("Friends", Screen.Friends.route, Icons.Default.People),
+        NavigationItem("Activity", Screen.Activity.route, Icons.Default.History),
+        NavigationItem("Account", Screen.Account.route, Icons.Default.Person)
     )
 
     // Define screens where we want to hide the navigation UI

@@ -17,5 +17,6 @@ local.properties
 .idea/vcs.xml
 *.pro
 
-# If you want to keep your Firebase config private, uncomment the line below:
-# google-services.json
+# Firebase configuration (contains API keys)
+google-services.json
+app/google-services.json

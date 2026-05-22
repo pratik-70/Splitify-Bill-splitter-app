@@ -38,6 +38,9 @@ class MainViewModel : ViewModel() {
     val totalYouAreOwed = MutableStateFlow(0.0)
     val totalYouOwe = MutableStateFlow(0.0)
 
+    private val _settlements = MutableStateFlow<List<Settlement>>(emptyList())
+    val settlements: StateFlow<List<Settlement>> = _settlements.asStateFlow()
+
     private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
         val firebaseUser = firebaseAuth.currentUser
         if (firebaseUser != null) {
@@ -115,10 +118,33 @@ class MainViewModel : ViewModel() {
     }
 
     private fun fetchCurrentUserData(userId: String) {
-        db.collection("users").document(userId).addSnapshotListener { snapshot, _ ->
-            snapshot?.toObject(User::class.java)?.let { user ->
-                _currentUser.value = user
-                startListeningToData(user.id)
+        db.collection("users").document(userId).addSnapshotListener { snapshot, error ->
+            if (error != null) {
+                android.util.Log.e("Splitify", "Error fetching user data", error)
+                return@addSnapshotListener
+            }
+            
+            if (snapshot != null && snapshot.exists()) {
+                val user = snapshot.toObject(User::class.java)
+                if (user != null) {
+                    _currentUser.value = user
+                    startListeningToData(user.id)
+                }
+            } else {
+                // If auth exists but no Firestore doc, create a basic one from Auth profile
+                val firebaseUser = auth.currentUser
+                if (firebaseUser != null) {
+                    val newUser = User(
+                        id = firebaseUser.uid,
+                        name = firebaseUser.displayName ?: "User",
+                        email = firebaseUser.email ?: ""
+                    )
+                    db.collection("users").document(firebaseUser.uid).set(newUser)
+                        .addOnSuccessListener {
+                            _currentUser.value = newUser
+                            startListeningToData(firebaseUser.uid)
+                        }
+                }
             }
         }
     }
@@ -248,7 +274,7 @@ class MainViewModel : ViewModel() {
             try {
                 val memberIds = mutableListOf(currentUserId)
                 val initialBalances = mutableMapOf(currentUserId to 0.0)
-                val NotFoundEmails = mutableListOf<String>()
+                val notFoundEmails = mutableListOf<String>()
                 
                 for (email in memberEmails) {
                     val cleanEmail = email.trim().lowercase()
@@ -256,21 +282,27 @@ class MainViewModel : ViewModel() {
                         val snapshot = db.collection("users")
                             .whereEqualTo("email", cleanEmail)
                             .get().await()
-                        if (!snapshot.isEmpty) {
-                            val userId = snapshot.documents[0].id
+                        
+                        val userId = if (!snapshot.isEmpty) {
+                            snapshot.documents[0].id
+                        } else {
+                            _usersMap.value.values.find { it.email.trim().lowercase() == cleanEmail }?.id
+                        }
+
+                        if (userId != null) {
                             if (!memberIds.contains(userId)) {
                                 memberIds.add(userId)
                                 initialBalances[userId] = 0.0
                             }
                         } else {
-                            NotFoundEmails.add(email)
+                            notFoundEmails.add(email)
                         }
                     }
                 }
 
-                if (NotFoundEmails.isNotEmpty()) {
+                if (notFoundEmails.isNotEmpty()) {
                     _isLoading.value = false
-                    onError("Could not find users with these emails: ${NotFoundEmails.joinToString(", ")}. Please make sure they have signed up for Splitify.")
+                    onError("Could not find users: ${notFoundEmails.joinToString(", ")}. They must sign up first.")
                     return@launch
                 }
 
@@ -289,26 +321,30 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             _isLoading.value = true
             try {
+                val cleanEmail = email.trim().lowercase()
                 val snapshot = db.collection("users")
-                    .whereEqualTo("email", email.trim().lowercase())
+                    .whereEqualTo("email", cleanEmail)
                     .get().await()
                 
-                if (snapshot.isEmpty) {
-                    onError("User not found with this email")
+                val userId = if (!snapshot.isEmpty) {
+                    snapshot.documents[0].id
+                } else {
+                    _usersMap.value.values.find { it.email.trim().lowercase() == cleanEmail }?.id
+                }
+                
+                if (userId == null) {
+                    _isLoading.value = false
+                    onError("User not found: $email")
                     return@launch
                 }
 
-                val userId = snapshot.documents[0].id
                 val groupRef = db.collection("groups").document(groupId)
-
                 db.runTransaction { transaction ->
                     val groupDoc = transaction.get(groupRef)
                     val members = groupDoc.get("members") as? List<String> ?: emptyList()
                     val balances = groupDoc.get("balances") as? Map<String, Any> ?: emptyMap()
 
-                    if (members.contains(userId)) {
-                        throw Exception("User is already a member of this group")
-                    }
+                    if (members.contains(userId)) throw Exception("User is already in this group")
 
                     val newMembers = members + userId
                     val newBalances = balances.mapValues { (it.value as? Number)?.toDouble() ?: 0.0 }.toMutableMap()
@@ -316,30 +352,24 @@ class MainViewModel : ViewModel() {
 
                     transaction.update(groupRef, "members", newMembers)
                     transaction.update(groupRef, "balances", newBalances)
+                    null
                 }.await()
+                
+                _isLoading.value = false
                 onSuccess()
             } catch (e: Exception) {
-                onError(e.message ?: "Failed to add member")
-            } finally {
                 _isLoading.value = false
+                onError(e.message ?: "Failed to add member")
             }
         }
     }
 
-    fun addExpense(
-        description: String,
-        amount: Double,
-        paidBy: String, 
-        groupId: String?,
-        involvedUserIds: List<String>
-    ) {
+    fun addExpense(description: String, amount: Double, paidBy: String, groupId: String?, involvedUserIds: List<String>) {
         val currentUserId = _currentUser.value?.id ?: return
-        val payerId = if (paidBy == "You") currentUserId else paidBy
-        
         val expense = Expense(
             description = description,
             amount = amount,
-            paidBy = payerId,
+            paidBy = paidBy,
             involvedUserIds = involvedUserIds,
             groupId = groupId,
             date = System.currentTimeMillis()
@@ -349,38 +379,28 @@ class MainViewModel : ViewModel() {
             _isLoading.value = true
             try {
                 db.runTransaction { transaction ->
-                    var updatedBalances: Map<String, Double>? = null
-                    
                     if (groupId != null) {
                         val groupRef = db.collection("groups").document(groupId)
                         val groupDoc = transaction.get(groupRef)
-                        
                         val currentBalances = groupDoc.get("balances") as? Map<String, Any> ?: emptyMap()
-                        val mUpdatedBalances = currentBalances.mapValues { 
-                            (it.value as? Number)?.toDouble() ?: 0.0 
-                        }.toMutableMap()
+                        val mUpdatedBalances = currentBalances.mapValues { (it.value as? Number)?.toDouble() ?: 0.0 }.toMutableMap()
                         
                         val share = if (involvedUserIds.isNotEmpty()) amount / involvedUserIds.size else 0.0
-                        val isPayerInvolved = involvedUserIds.contains(payerId)
-                        val payerCredit = if (isPayerInvolved) amount - share else amount
                         
-                        mUpdatedBalances[payerId] = (mUpdatedBalances[payerId] ?: 0.0) + payerCredit
+                        // Update Payer
+                        mUpdatedBalances[paidBy] = (mUpdatedBalances[paidBy] ?: 0.0) + amount
                         
+                        // Update Involved
                         involvedUserIds.forEach { userId ->
-                            if (userId != payerId) {
-                                mUpdatedBalances[userId] = (mUpdatedBalances[userId] ?: 0.0) - share
-                            }
+                            mUpdatedBalances[userId] = (mUpdatedBalances[userId] ?: 0.0) - share
                         }
-                        updatedBalances = mUpdatedBalances
+                        
+                        transaction.update(groupRef, "balances", mUpdatedBalances)
                     }
 
                     val expenseRef = db.collection("expenses").document()
                     transaction.set(expenseRef, expense.copy(id = expenseRef.id))
-                    
-                    if (groupId != null && updatedBalances != null) {
-                        val groupRef = db.collection("groups").document(groupId)
-                        transaction.update(groupRef, "balances", updatedBalances)
-                    }
+                    null
                 }.await()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -398,29 +418,23 @@ class MainViewModel : ViewModel() {
                     if (expense.groupId != null) {
                         val groupRef = db.collection("groups").document(expense.groupId)
                         val groupDoc = transaction.get(groupRef)
-                        
                         val currentBalances = groupDoc.get("balances") as? Map<String, Any> ?: emptyMap()
-                        val updatedBalances = currentBalances.mapValues { 
-                            (it.value as? Number)?.toDouble() ?: 0.0 
-                        }.toMutableMap()
+                        val updatedBalances = currentBalances.mapValues { (it.value as? Number)?.toDouble() ?: 0.0 }.toMutableMap()
                         
                         val share = if (expense.involvedUserIds.isNotEmpty()) expense.amount / expense.involvedUserIds.size else 0.0
-                        val payerId = expense.paidBy
                         
-                        val isPayerInvolved = expense.involvedUserIds.contains(payerId)
-                        val payerCredit = if (isPayerInvolved) expense.amount - share else expense.amount
-                        updatedBalances[payerId] = (updatedBalances[payerId] ?: 0.0) - payerCredit
+                        // Reverse Payer Credit
+                        updatedBalances[expense.paidBy] = (updatedBalances[expense.paidBy] ?: 0.0) - expense.amount
                         
+                        // Reverse Shared Debt
                         expense.involvedUserIds.forEach { userId ->
-                            if (userId != payerId) {
-                                updatedBalances[userId] = (updatedBalances[userId] ?: 0.0) + share
-                            }
+                            updatedBalances[userId] = (updatedBalances[userId] ?: 0.0) + share
                         }
                         transaction.update(groupRef, "balances", updatedBalances)
                     }
-
                     val expenseRef = db.collection("expenses").document(expense.id)
                     transaction.delete(expenseRef)
+                    null
                 }.await()
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -430,18 +444,66 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun settleGroup(groupId: String) {
+    fun settleGroup(groupId: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val groupRef = db.collection("groups").document(groupId)
-                val doc = groupRef.get().await()
-                val balances = doc.get("balances") as? Map<String, Any> ?: return@launch
-                val updatedBalances = balances.mapValues { 0.0 }
-                groupRef.update("balances", updatedBalances).await()
+                // Calculate settlements before clearing balances
+                val group = _groups.value.find { it.id == groupId } ?: throw Exception("Group not found")
+                val calculatedSettlements = calculateSettlements(group.balances)
+                _settlements.value = calculatedSettlements
+                
+                db.runTransaction { transaction ->
+                    val groupRef = db.collection("groups").document(groupId)
+                    val groupDoc = transaction.get(groupRef)
+                    if (!groupDoc.exists()) throw Exception("Group not found")
+                    
+                    val balances = groupDoc.get("balances") as? Map<String, Any> ?: emptyMap()
+                    val updatedBalances = balances.mapValues { 0.0 }
+                    
+                    transaction.update(groupRef, "balances", updatedBalances)
+                    null
+                }.await()
+                
+                // Cleanup expenses after transaction
+                val expensesSnapshot = db.collection("expenses").whereEqualTo("groupId", groupId).get().await()
+                val batch = db.batch()
+                expensesSnapshot.documents.forEach { batch.delete(it.reference) }
+                batch.commit().await()
+
+                onSuccess()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onError(e.message ?: "Failed to settle balances")
             } finally {
                 _isLoading.value = false
             }
         }
+    }
+
+    private fun calculateSettlements(balances: Map<String, Double>): List<Settlement> {
+        val debtors = balances.filter { it.value < -0.01 }.map { it.key to -it.value }.toMutableList()
+        val creditors = balances.filter { it.value > 0.01 }.map { it.key to it.value }.toMutableList()
+        val settlements = mutableListOf<Settlement>()
+
+        var dIdx = 0
+        var cIdx = 0
+
+        while (dIdx < debtors.size && cIdx < creditors.size) {
+            val (debtorId, debtAmount) = debtors[dIdx]
+            val (creditorId, creditAmount) = creditors[cIdx]
+
+            val settleAmount = minOf(debtAmount, creditAmount)
+            if (settleAmount > 0) {
+                settlements.add(Settlement(debtorId, creditorId, settleAmount))
+            }
+
+            debtors[dIdx] = debtorId to (debtAmount - settleAmount)
+            creditors[cIdx] = creditorId to (creditAmount - settleAmount)
+
+            if (debtors[dIdx].second < 0.01) dIdx++
+            if (creditors[cIdx].second < 0.01) cIdx++
+        }
+        return settlements
     }
 }

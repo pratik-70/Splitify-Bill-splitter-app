@@ -36,3 +36,9 @@ data class Friend(
     val user: User = User(),
     val balanceWithMe: Double = 0.0
 )
+
+data class Settlement(
+    val fromUserId: String,
+    val toUserId: String,
+    val amount: Double
+)

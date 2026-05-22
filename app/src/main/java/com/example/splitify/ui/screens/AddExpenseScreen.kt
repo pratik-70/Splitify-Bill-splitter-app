@@ -3,7 +3,6 @@ package com.example.splitify.ui.screens
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Done
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,23 +25,20 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
     val friends by viewModel.friends.collectAsState()
     val groups by viewModel.groups.collectAsState()
     val currentUser by viewModel.currentUser.collectAsState()
+    val usersMap by viewModel.usersMap.collectAsState()
     
     var selectedGroupId by remember { mutableStateOf(initialGroupId) }
     val involvedUserIds = remember { mutableStateListOf<String>() }
-    val usersMap by viewModel.usersMap.collectAsState()
     val currentUserId = currentUser?.id ?: ""
     
     // Initialize involved users when group or groups list changes
     LaunchedEffect(selectedGroupId, groups) {
-        // Only auto-populate if we haven't manually touched it or if group changed
         val currentGroup = groups.find { it.id == selectedGroupId }
         if (selectedGroupId != null && currentGroup != null) {
-            // When a group is selected, default to all members being involved
             involvedUserIds.clear()
             involvedUserIds.addAll(currentGroup.members)
         } else if (selectedGroupId == null) {
-            // When no group, default to just the current user
-            if (involvedUserIds.isEmpty() || !friends.map { it.user.id }.containsAll(involvedUserIds.filter { it != currentUserId })) {
+            if (involvedUserIds.isEmpty()) {
                  involvedUserIds.clear()
                  involvedUserIds.add(currentUserId)
             }
@@ -50,7 +46,6 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
     }
     
     var paidByUserId by remember { mutableStateOf(currentUserId) }
-    
     var groupExpanded by remember { mutableStateOf(false) }
     var paidByExpanded by remember { mutableStateOf(false) }
 
@@ -63,9 +58,6 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                         onClick = {
                             if (description.isNotEmpty() && amount.isNotEmpty()) {
                                 val amountVal = amount.toDoubleOrNull() ?: 0.0
-                                
-                                // Use the manually selected involved users
-                                // Ensure at least one person is involved
                                 val finalInvolved = if (involvedUserIds.isNotEmpty()) {
                                     involvedUserIds.toList()
                                 } else {
@@ -81,9 +73,10 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                                 )
                                 navController.popBackStack()
                             }
-                        }
+                        },
+                        enabled = description.isNotBlank() && amount.isNotBlank()
                     ) {
-                        Text("Save", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                        Text("Save", color = if (description.isNotBlank() && amount.isNotBlank()) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.5f), fontWeight = FontWeight.Bold)
                     }
                 }
             )
@@ -123,9 +116,7 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                             textStyle = LocalTextStyle.current.copy(fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary),
                             colors = TextFieldDefaults.colors(
                                 focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                                unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                                focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                                unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant
+                                unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent
                             )
                         )
                     }
@@ -137,15 +128,13 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                         modifier = Modifier.fillMaxWidth(),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                            focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                            unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant
+                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent
                         )
                     )
                 }
             }
 
-            // Paid By and Split Details Section
+            // Paid By Section
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Paid by:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 
@@ -154,7 +143,6 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                     onExpandedChange = { paidByExpanded = !paidByExpanded },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    val usersMap by viewModel.usersMap.collectAsState()
                     val selectedPayerName = if (paidByUserId == currentUserId) "You" else (usersMap[paidByUserId]?.name ?: "Select Payer")
                     
                     OutlinedTextField(
@@ -163,11 +151,7 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                         readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = paidByExpanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                        )
+                        shape = MaterialTheme.shapes.medium
                     )
                     
                     ExposedDropdownMenu(
@@ -182,7 +166,6 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                             }
                         )
                         
-                        // If a group is selected, show group members. Otherwise show friends.
                         val potentialPayers = if (selectedGroupId != null) {
                             groups.find { it.id == selectedGroupId }?.members?.filter { it != currentUserId } ?: emptyList()
                         } else {
@@ -218,11 +201,7 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                         readOnly = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = groupExpanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                        )
+                        shape = MaterialTheme.shapes.medium
                     )
                     ExposedDropdownMenu(
                         expanded = groupExpanded,
@@ -247,20 +226,13 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                     }
                 }
 
-                // Member/Friend Selection Chips
+                // Member Selection Chips
                 val displayUsers = if (selectedGroupId != null) {
                     groups.find { it.id == selectedGroupId }?.members ?: emptyList()
                 } else {
-                    // Include yourself and friends
                     (listOf(currentUserId) + friends.map { it.user.id }).distinct()
                 }
 
-                Text(
-                    if (selectedGroupId != null) "Group Members" else "Friends", 
-                    style = MaterialTheme.typography.labelLarge, 
-                    color = MaterialTheme.colorScheme.outline
-                )
-                
                 androidx.compose.foundation.lazy.LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
@@ -282,11 +254,7 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                             label = { Text(userName) },
                             leadingIcon = if (isSelected) {
                                 { Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            } else null,
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary
-                            )
+                            } else null
                         )
                     }
                 }
@@ -294,16 +262,14 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
             
             Spacer(modifier = Modifier.weight(1f))
             
-            val usersMap by viewModel.usersMap.collectAsState()
             val payerDisplayName = if (paidByUserId == currentUserId) "you" else (usersMap[paidByUserId]?.name ?: "someone")
-            
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.05f)
             ) {
                 Text(
-                    "Paid by $payerDisplayName and split equally among all selected.",
+                    "Paid by $payerDisplayName and split equally among ${involvedUserIds.size} selected.",
                     modifier = Modifier.padding(16.dp),
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodyMedium,
