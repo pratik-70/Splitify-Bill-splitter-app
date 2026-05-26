@@ -25,7 +25,9 @@ data class Expense(
     val splitType: SplitType = SplitType.EQUALLY,
     val splitDetails: Map<String, Double> = emptyMap(), // User ID to amount
     val involvedUserIds: List<String> = emptyList(),
-    val groupId: String? = null
+    val groupId: String? = null,
+    val isSettled: Boolean = false,
+    val isSettlement: Boolean = false
 )
 
 enum class SplitType {

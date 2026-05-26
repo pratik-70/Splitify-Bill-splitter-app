@@ -478,10 +478,33 @@ class MainViewModel : ViewModel() {
                     null
                 }.await()
                 
-                // Cleanup expenses after transaction
-                val expensesSnapshot = db.collection("expenses").whereEqualTo("groupId", groupId).get().await()
+                // Mark existing expenses as settled and add settlement records
+                val expensesSnapshot = db.collection("expenses")
+                    .whereEqualTo("groupId", groupId)
+                    .whereEqualTo("isSettled", false)
+                    .get().await()
+                
                 val batch = db.batch()
-                expensesSnapshot.documents.forEach { batch.delete(it.reference) }
+                expensesSnapshot.documents.forEach { doc ->
+                    batch.update(doc.reference, "isSettled", true)
+                }
+
+                // Add "Settlement" entries for history/activity
+                calculatedSettlements.forEach { settlement ->
+                    val settlementExpense = Expense(
+                        description = "Settle Up",
+                        amount = settlement.amount,
+                        paidBy = settlement.fromUserId,
+                        involvedUserIds = listOf(settlement.toUserId),
+                        groupId = groupId,
+                        date = System.currentTimeMillis(),
+                        isSettled = true,
+                        isSettlement = true
+                    )
+                    val newRef = db.collection("expenses").document()
+                    batch.set(newRef, settlementExpense.copy(id = newRef.id))
+                }
+
                 batch.commit().await()
 
                 onSuccess()

@@ -61,10 +61,15 @@ fun ActivityScreen(viewModel: MainViewModel, navController: NavHostController) {
                     items(expenses) { expense ->
                         val groupName = expense.groupId?.let { groupsMap[it]?.name }
                         val payerName = if (expense.paidBy == currentUserId) "You" else (usersMap[expense.paidBy]?.name ?: "Someone")
+                        val receiverName = if (expense.isSettlement) {
+                            val receiverId = expense.involvedUserIds.firstOrNull()
+                            if (receiverId == currentUserId) "you" else (usersMap[receiverId]?.name ?: "someone")
+                        } else null
                         
                         ActivityItem(
                             expense = expense,
                             payerName = payerName,
+                            receiverName = receiverName,
                             groupName = groupName,
                             currentUserId = currentUserId
                         )
@@ -88,7 +93,7 @@ fun ActivityScreen(viewModel: MainViewModel, navController: NavHostController) {
 }
 
 @Composable
-fun ActivityItem(expense: Expense, payerName: String, groupName: String?, currentUserId: String) {
+fun ActivityItem(expense: Expense, payerName: String, receiverName: String?, groupName: String?, currentUserId: String) {
     val sdf = SimpleDateFormat("MMM dd, yyyy", Locale.US)
     
     val isPayer = expense.paidBy == currentUserId
@@ -122,18 +127,25 @@ fun ActivityItem(expense: Expense, payerName: String, groupName: String?, curren
                 color = MaterialTheme.colorScheme.onSurface
             )
             val splitText = buildString {
-                append(payerName)
-                append(" paid")
-                if (groupName != null) append(" in \"$groupName\"")
-                if (expense.involvedUserIds.isNotEmpty()) {
-                    append(" • Split with ")
-                    if (expense.involvedUserIds.contains(currentUserId)) {
-                        append("you")
-                        if (expense.involvedUserIds.size > 1) {
-                            append(" & ${expense.involvedUserIds.size - 1} others")
+                if (expense.isSettlement) {
+                    append(payerName)
+                    append(" settled up with ")
+                    append(receiverName)
+                    if (groupName != null) append(" in \"$groupName\"")
+                } else {
+                    append(payerName)
+                    append(" paid")
+                    if (groupName != null) append(" in \"$groupName\"")
+                    if (expense.involvedUserIds.isNotEmpty()) {
+                        append(" • Split with ")
+                        if (expense.involvedUserIds.contains(currentUserId)) {
+                            append("you")
+                            if (expense.involvedUserIds.size > 1) {
+                                append(" & ${expense.involvedUserIds.size - 1} others")
+                            }
+                        } else {
+                            append("${expense.involvedUserIds.size} members")
                         }
-                    } else {
-                        append("${expense.involvedUserIds.size} members")
                     }
                 }
             }
@@ -152,6 +164,15 @@ fun ActivityItem(expense: Expense, payerName: String, groupName: String?, curren
         
         Column(horizontalAlignment = Alignment.End) {
             val (statusText, statusColor, displayAmount) = when {
+                expense.isSettlement -> {
+                    if (expense.paidBy == currentUserId) {
+                        Triple("You sent", Color.Gray, expense.amount)
+                    } else if (expense.involvedUserIds.contains(currentUserId)) {
+                        Triple("You received", Color(0xFF17B890), expense.amount)
+                    } else {
+                        Triple("Settlement", Color.Gray, expense.amount)
+                    }
+                }
                 isPayer -> {
                     val lent = if (isInvolved) expense.amount - share else expense.amount
                     if (lent > 0) {
