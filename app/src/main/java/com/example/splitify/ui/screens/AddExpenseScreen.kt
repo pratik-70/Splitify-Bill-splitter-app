@@ -30,17 +30,26 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
     var selectedGroupId by remember { mutableStateOf(initialGroupId) }
     val involvedUserIds = remember { mutableStateListOf<String>() }
     val currentUserId = currentUser?.id ?: ""
+    var lastInitializedGroupId by remember { mutableStateOf<String?>(null) }
     
     // Initialize involved users when group or groups list changes
-    LaunchedEffect(selectedGroupId, groups) {
-        val currentGroup = groups.find { it.id == selectedGroupId }
-        if (selectedGroupId != null && currentGroup != null) {
-            involvedUserIds.clear()
-            involvedUserIds.addAll(currentGroup.members)
-        } else if (selectedGroupId == null) {
-            if (involvedUserIds.isEmpty()) {
-                 involvedUserIds.clear()
-                 involvedUserIds.add(currentUserId)
+    LaunchedEffect(selectedGroupId, groups, currentUserId) {
+        val shouldInitialize = selectedGroupId != lastInitializedGroupId || involvedUserIds.isEmpty()
+        
+        if (shouldInitialize) {
+            if (selectedGroupId != null) {
+                val currentGroup = groups.find { it.id == selectedGroupId }
+                if (currentGroup != null) {
+                    involvedUserIds.clear()
+                    involvedUserIds.addAll(currentGroup.members)
+                    lastInitializedGroupId = selectedGroupId
+                }
+            } else {
+                if (currentUserId.isNotEmpty()) {
+                    involvedUserIds.clear()
+                    involvedUserIds.add(currentUserId)
+                    lastInitializedGroupId = selectedGroupId
+                }
             }
         }
     }
@@ -185,77 +194,86 @@ fun AddExpenseScreen(viewModel: MainViewModel, navController: NavHostController,
                     }
                 }
 
-                Text("Split with:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                
-                // Group Selection
-                Text("Group (Optional)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
-                ExposedDropdownMenuBox(
-                    expanded = groupExpanded,
-                    onExpandedChange = { groupExpanded = !groupExpanded },
-                    modifier = Modifier.fillMaxWidth()
+                // Split Section
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val selectedGroup = groups.find { it.id == selectedGroupId }
-                    OutlinedTextField(
-                        value = selectedGroup?.name ?: "No group (Personal)",
-                        onValueChange = {},
-                        readOnly = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = groupExpanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium
-                    )
-                    ExposedDropdownMenu(
-                        expanded = groupExpanded,
-                        onDismissRequest = { groupExpanded = false }
+                    Text("Split with:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    
+                    val displayUsers = if (selectedGroupId != null) {
+                        groups.find { it.id == selectedGroupId }?.members ?: emptyList()
+                    } else {
+                        (listOf(currentUserId) + friends.map { it.user.id }).distinct()
+                    }
+
+                    androidx.compose.foundation.lazy.LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 4.dp)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("No group (Personal)") },
-                            onClick = {
-                                selectedGroupId = null
-                                groupExpanded = false
-                            }
-                        )
-                        groups.forEach { group ->
-                            DropdownMenuItem(
-                                text = { Text(group.name) },
+                        items(displayUsers.size) { index ->
+                            val userId = displayUsers[index]
+                            val userName = if (userId == currentUserId) "You" else (usersMap[userId]?.name ?: "Unknown")
+                            val isSelected = involvedUserIds.contains(userId)
+                            
+                            FilterChip(
+                                selected = isSelected,
                                 onClick = {
-                                    selectedGroupId = group.id
-                                    groupExpanded = false
-                                }
+                                    if (isSelected) {
+                                        if (involvedUserIds.size > 1) involvedUserIds.remove(userId)
+                                    } else {
+                                        involvedUserIds.add(userId)
+                                    }
+                                },
+                                label = { Text(userName, fontSize = 12.sp) },
+                                leadingIcon = if (isSelected) {
+                                    { Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(14.dp)) }
+                                } else null
                             )
                         }
                     }
                 }
-
-                // Member Selection Chips
-                val displayUsers = if (selectedGroupId != null) {
-                    groups.find { it.id == selectedGroupId }?.members ?: emptyList()
-                } else {
-                    (listOf(currentUserId) + friends.map { it.user.id }).distinct()
-                }
-
-                androidx.compose.foundation.lazy.LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    items(displayUsers.size) { index ->
-                        val userId = displayUsers[index]
-                        val userName = if (userId == currentUserId) "You" else (usersMap[userId]?.name ?: "Unknown")
-                        val isSelected = involvedUserIds.contains(userId)
-                        
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                if (isSelected) {
-                                    if (involvedUserIds.size > 1) involvedUserIds.remove(userId)
-                                } else {
-                                    involvedUserIds.add(userId)
-                                }
-                            },
-                            label = { Text(userName) },
-                            leadingIcon = if (isSelected) {
-                                { Icon(Icons.Default.Done, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                            } else null
+                
+                // Group Selection (Optional)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Group (Optional)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.outline)
+                    ExposedDropdownMenuBox(
+                        expanded = groupExpanded,
+                        onExpandedChange = { groupExpanded = !groupExpanded },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val selectedGroup = groups.find { it.id == selectedGroupId }
+                        OutlinedTextField(
+                            value = selectedGroup?.name ?: "No group (Personal)",
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = groupExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            shape = MaterialTheme.shapes.medium
                         )
+                        ExposedDropdownMenu(
+                            expanded = groupExpanded,
+                            onDismissRequest = { groupExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("No group (Personal)") },
+                                onClick = {
+                                    selectedGroupId = null
+                                    groupExpanded = false
+                                }
+                            )
+                            groups.forEach { group ->
+                                DropdownMenuItem(
+                                    text = { Text(group.name) },
+                                    onClick = {
+                                        selectedGroupId = group.id
+                                        groupExpanded = false
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }

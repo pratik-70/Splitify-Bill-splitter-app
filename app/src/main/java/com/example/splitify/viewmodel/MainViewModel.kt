@@ -322,33 +322,46 @@ class MainViewModel : ViewModel() {
             _isLoading.value = true
             try {
                 val cleanEmail = email.trim().lowercase()
-                val snapshot = db.collection("users")
-                    .whereEqualTo("email", cleanEmail)
-                    .get().await()
                 
-                val userId = if (!snapshot.isEmpty) {
-                    snapshot.documents[0].id
-                } else {
-                    _usersMap.value.values.find { it.email.trim().lowercase() == cleanEmail }?.id
+                // First, check if the user is already in our usersMap (already a friend or known)
+                var userId = _usersMap.value.values.find { it.email.trim().lowercase() == cleanEmail }?.id
+                
+                // If not in usersMap, look up in Firestore
+                if (userId == null) {
+                    val snapshot = db.collection("users")
+                        .whereEqualTo("email", cleanEmail)
+                        .get().await()
+                    
+                    if (!snapshot.isEmpty) {
+                        userId = snapshot.documents[0].id
+                        // Add to usersMap if not present
+                        val user = snapshot.documents[0].toObject(User::class.java)
+                        if (user != null) {
+                            val currentMap = _usersMap.value.toMutableMap()
+                            currentMap[user.id] = user
+                            _usersMap.value = currentMap
+                        }
+                    }
                 }
                 
                 if (userId == null) {
                     _isLoading.value = false
-                    onError("User not found: $email")
+                    onError("User not found with email: $email")
                     return@launch
                 }
 
+                val targetUserId = userId
                 val groupRef = db.collection("groups").document(groupId)
                 db.runTransaction { transaction ->
                     val groupDoc = transaction.get(groupRef)
                     val members = groupDoc.get("members") as? List<String> ?: emptyList()
                     val balances = groupDoc.get("balances") as? Map<String, Any> ?: emptyMap()
 
-                    if (members.contains(userId)) throw Exception("User is already in this group")
+                    if (members.contains(targetUserId)) throw Exception("User is already in this group")
 
-                    val newMembers = members + userId
+                    val newMembers = members + targetUserId
                     val newBalances = balances.mapValues { (it.value as? Number)?.toDouble() ?: 0.0 }.toMutableMap()
-                    newBalances[userId] = 0.0
+                    newBalances[targetUserId] = 0.0
 
                     transaction.update(groupRef, "members", newMembers)
                     transaction.update(groupRef, "balances", newBalances)
