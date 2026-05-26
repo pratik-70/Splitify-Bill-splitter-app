@@ -38,6 +38,7 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
     var showAddMemberDialog by remember { mutableStateOf(false) }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showSettlementDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     val settlements by viewModel.settlements.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -53,6 +54,26 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
             settlements = settlements,
             usersMap = usersMap,
             onDismiss = { showSettlementDialog = false }
+        )
+    }
+
+    if (showDeleteDialog) {
+        DeleteGroupDialog(
+            groupName = group.name,
+            onDismiss = { showDeleteDialog = false },
+            onConfirm = {
+                viewModel.deleteGroup(group.id,
+                    onSuccess = {
+                        showDeleteDialog = false
+                        navController.popBackStack()
+                        android.widget.Toast.makeText(context, "Group deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onError = { errorMsg ->
+                        showDeleteDialog = false
+                        android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                )
+            }
         )
     }
 
@@ -111,6 +132,9 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
                         )
                     }) {
                         Icon(Icons.Default.CheckCircle, contentDescription = "Settle Up")
+                    }
+                    IconButton(onClick = { showDeleteDialog = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Group", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             )
@@ -357,6 +381,28 @@ fun SettlementDialog(
         confirmButton = {
             Button(onClick = onDismiss) {
                 Text("Done")
+            }
+        }
+    )
+}
+
+@Composable
+fun DeleteGroupDialog(groupName: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete Group") },
+        text = { Text("Are you sure you want to delete '$groupName'? This action cannot be undone and will delete all expenses in this group. You can only delete a group if all members are settled up.") },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
             }
         }
     )

@@ -494,6 +494,39 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    fun deleteGroup(groupId: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val group = _groups.value.find { it.id == groupId } ?: throw Exception("Group not found")
+                
+                // Check if all balances are zero (within a small epsilon)
+                val isSettled = group.balances.values.all { kotlin.math.abs(it) < 0.01 }
+                
+                if (!isSettled) {
+                    throw Exception("Cannot delete group: All balances must be settled (zero) first.")
+                }
+
+                // Delete all expenses associated with this group
+                val expensesSnapshot = db.collection("expenses").whereEqualTo("groupId", groupId).get().await()
+                val batch = db.batch()
+                expensesSnapshot.documents.forEach { batch.delete(it.reference) }
+                
+                // Delete the group document
+                val groupRef = db.collection("groups").document(groupId)
+                batch.delete(groupRef)
+                
+                batch.commit().await()
+                onSuccess()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onError(e.message ?: "Failed to delete group")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     private fun calculateSettlements(balances: Map<String, Double>): List<Settlement> {
         val debtors = balances.filter { it.value < -0.01 }.map { it.key to -it.value }.toMutableList()
         val creditors = balances.filter { it.value > 0.01 }.map { it.key to it.value }.toMutableList()
