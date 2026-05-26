@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -35,19 +36,70 @@ fun GroupsScreen(viewModel: MainViewModel, navController: NavHostController) {
     val totalOwe by viewModel.totalYouOwe.collectAsState()
     val usersMap by viewModel.usersMap.collectAsState()
 
+    var isSearchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredGroups = if (searchQuery.isEmpty()) {
+        groups
+    } else {
+        groups.filter { it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
     Scaffold(
         topBar = {
-            SplitifyTopAppBar(
-                title = "Splitify",
-                actions = {
-                    IconButton(onClick = { navController.navigate(Screen.CreateGroup.route) }) {
-                        Icon(Icons.Default.GroupAdd, contentDescription = "Create Group")
-                    }
-                    IconButton(onClick = { /* Search */ }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
+            if (isSearchMode) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { 
+                            isSearchMode = false
+                            searchQuery = ""
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search groups...", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)) },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                cursorColor = MaterialTheme.colorScheme.onPrimary,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onPrimary,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            singleLine = true
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
+                        }
                     }
                 }
-            )
+            } else {
+                SplitifyTopAppBar(
+                    title = "Splitify",
+                    actions = {
+                        IconButton(onClick = { navController.navigate(Screen.CreateGroup.route) }) {
+                            Icon(Icons.Default.GroupAdd, contentDescription = "Create Group")
+                        }
+                        IconButton(onClick = { isSearchMode = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                    }
+                )
+            }
         }
     ) { padding ->
         Column(
@@ -56,18 +108,23 @@ fun GroupsScreen(viewModel: MainViewModel, navController: NavHostController) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            SplitifySummaryCard(totalOwe = totalOwe, totalOwed = totalOwed)
+            if (!isSearchMode) {
+                SplitifySummaryCard(totalOwe = totalOwe, totalOwed = totalOwed)
+            }
 
-            if (groups.isEmpty()) {
+            if (filteredGroups.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("You have no groups yet.", color = Color.Gray)
+                    Text(
+                        if (searchQuery.isEmpty()) "You have no groups yet." else "No groups found matching \"$searchQuery\"", 
+                        color = Color.Gray
+                    )
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
-                    items(groups) { group ->
+                    items(filteredGroups) { group ->
                         GroupItem(
                             group,
                             currentUserId = viewModel.currentUser.value?.id ?: "",

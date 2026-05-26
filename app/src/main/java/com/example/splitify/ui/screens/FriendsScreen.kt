@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Assignment
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -38,6 +39,15 @@ fun FriendsScreen(viewModel: MainViewModel, navController: NavHostController) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var showAddFriendDialog by remember { mutableStateOf(false) }
 
+    var isSearchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredFriends = if (searchQuery.isEmpty()) {
+        friends
+    } else {
+        friends.filter { it.user.name.contains(searchQuery, ignoreCase = true) || it.user.email.contains(searchQuery, ignoreCase = true) }
+    }
+
     if (showAddFriendDialog) {
         AddFriendDialog(
             onDismiss = { showAddFriendDialog = false },
@@ -57,14 +67,56 @@ fun FriendsScreen(viewModel: MainViewModel, navController: NavHostController) {
 
     Scaffold(
         topBar = {
-            SplitifyTopAppBar(
-                title = "Friends",
-                actions = {
-                    IconButton(onClick = { /* Search */ }) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
+            if (isSearchMode) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { 
+                            isSearchMode = false
+                            searchQuery = ""
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search friends...", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)) },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                cursorColor = MaterialTheme.colorScheme.onPrimary,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onPrimary,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            singleLine = true
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
+                        }
                     }
                 }
-            )
+            } else {
+                SplitifyTopAppBar(
+                    title = "Friends",
+                    actions = {
+                        IconButton(onClick = { isSearchMode = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                    }
+                )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
@@ -84,27 +136,35 @@ fun FriendsScreen(viewModel: MainViewModel, navController: NavHostController) {
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                SplitifySummaryCard(totalOwe = totalOwe, totalOwed = totalOwed)
+                if (!isSearchMode) {
+                    SplitifySummaryCard(totalOwe = totalOwe, totalOwed = totalOwed)
+                }
 
-                if (friends.isEmpty()) {
+                if (filteredFriends.isEmpty()) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Icon(
-                            Icons.Default.PeopleOutline,
+                            if (searchQuery.isEmpty()) Icons.Default.PeopleOutline else Icons.Default.SearchOff,
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),
                             tint = Color.Gray.copy(alpha = 0.5f)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text("No friends yet.", color = Color.Gray, fontSize = 16.sp)
-                        Text("Add friends to start splitting expenses!", color = Color.Gray, fontSize = 14.sp)
+                        Text(
+                            if (searchQuery.isEmpty()) "No friends yet." else "No friends found matching \"$searchQuery\"", 
+                            color = Color.Gray, 
+                            fontSize = 16.sp
+                        )
+                        if (searchQuery.isEmpty()) {
+                            Text("Add friends to start splitting expenses!", color = Color.Gray, fontSize = 14.sp)
+                        }
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(friends) { friend ->
+                        items(filteredFriends) { friend ->
                             FriendItem(friend)
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = 72.dp),

@@ -5,11 +5,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,30 +34,95 @@ fun ActivityScreen(viewModel: MainViewModel, navController: NavHostController) {
     val groupsMap = groups.associateBy { it.id }
     val currentUserId = currentUser?.id ?: ""
 
+    var isSearchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredExpenses = if (searchQuery.isEmpty()) {
+        expenses
+    } else {
+        expenses.filter { expense ->
+            val groupName = expense.groupId?.let { groupsMap[it]?.name } ?: ""
+            expense.description.contains(searchQuery, ignoreCase = true) || 
+            groupName.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
     Scaffold(
         topBar = {
-            SplitifyTopAppBar(title = "Recent activity")
+            if (isSearchMode) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { 
+                            isSearchMode = false
+                            searchQuery = ""
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search activity...", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)) },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                cursorColor = MaterialTheme.colorScheme.onPrimary,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onPrimary,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            singleLine = true
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
+                        }
+                    }
+                }
+            } else {
+                SplitifyTopAppBar(
+                    title = "Recent activity",
+                    actions = {
+                        IconButton(onClick = { isSearchMode = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                    }
+                )
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (expenses.isEmpty() && !isLoading) {
+            if (filteredExpenses.isEmpty() && !isLoading) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        Icons.Default.Receipt,
+                        if (searchQuery.isEmpty()) Icons.Default.Receipt else Icons.Default.SearchOff,
                         contentDescription = null,
                         modifier = Modifier.size(64.dp),
                         tint = Color.LightGray
                     )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("No recent activity yet.", color = Color.Gray)
+                    Text(
+                        if (searchQuery.isEmpty()) "No recent activity yet." else "No activity found matching \"$searchQuery\"", 
+                        color = Color.Gray
+                    )
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(expenses) { expense ->
+                    items(filteredExpenses) { expense ->
                         val groupName = expense.groupId?.let { groupsMap[it]?.name }
                         val payerName = if (expense.paidBy == currentUserId) "You" else (usersMap[expense.paidBy]?.name ?: "Someone")
                         val receiverName = if (expense.isSettlement) {

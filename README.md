@@ -5,6 +5,7 @@ Splitify is a modern, real-time bill-splitting application built with **Jetpack 
 ## ✨ Features
 
 - **Real-time Sync**: Instant updates across all members using Cloud Firestore.
+- **Smart Search**: Quickly find groups, friends, or specific expenses with built-in search functionality across all main screens.
 - **Horizontal Swipe Navigation**: Seamlessly switch between **Groups**, **Friends**, **Activity**, and **Account** tabs using a synchronized `HorizontalPager` and `BottomNavigationBar`.
 - **Intelligent Settlements**: Automatically calculates the most efficient way to "Settle Up" within a group.
 - **Persistent Activity Feed**: Full history of expenses and settlements. Unlike many apps, Splitify preserves your expense history even after settling up, marking them as archived while creating new settlement records.

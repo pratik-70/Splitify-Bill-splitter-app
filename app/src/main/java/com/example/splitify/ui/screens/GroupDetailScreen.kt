@@ -35,6 +35,15 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
     val isLoading by viewModel.isLoading.collectAsState()
     val currentUserId = currentUser?.id ?: ""
 
+    var isSearchMode by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredGroupExpenses = if (searchQuery.isEmpty()) {
+        groupExpenses
+    } else {
+        groupExpenses.filter { it.description.contains(searchQuery, ignoreCase = true) }
+    }
+
     var showAddMemberDialog by remember { mutableStateOf(false) }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showSettlementDialog by remember { mutableStateOf(false) }
@@ -106,38 +115,83 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
 
     Scaffold(
         topBar = {
-            SplitifyTopAppBar(
-                title = group.name,
-                navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showMembersDialog = true }) {
-                        Icon(Icons.Default.Groups, contentDescription = "View Members")
-                    }
-                    IconButton(onClick = { showAddMemberDialog = true }) {
-                        Icon(Icons.Default.PersonAdd, contentDescription = "Add Member")
-                    }
-                    IconButton(onClick = { 
-                        viewModel.settleGroup(group.id, 
-                            onSuccess = {
-                                showSettlementDialog = true
-                                android.widget.Toast.makeText(context, "Group balances settled!", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            onError = { error ->
-                                android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
-                            }
+            if (isSearchMode) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                    color = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { 
+                            isSearchMode = false
+                            searchQuery = ""
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search expenses...", color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f)) },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                cursorColor = MaterialTheme.colorScheme.onPrimary,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onPrimary,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            singleLine = true
                         )
-                    }) {
-                        Icon(Icons.Default.CheckCircle, contentDescription = "Settle Up")
-                    }
-                    IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete Group", tint = MaterialTheme.colorScheme.error)
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                            }
+                        }
                     }
                 }
-            )
+            } else {
+                SplitifyTopAppBar(
+                    title = group.name,
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { isSearchMode = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Search")
+                        }
+                        IconButton(onClick = { showMembersDialog = true }) {
+                            Icon(Icons.Default.Groups, contentDescription = "View Members")
+                        }
+                        IconButton(onClick = { showAddMemberDialog = true }) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = "Add Member")
+                        }
+                        IconButton(onClick = { 
+                            viewModel.settleGroup(group.id, 
+                                onSuccess = {
+                                    showSettlementDialog = true
+                                    android.widget.Toast.makeText(context, "Group balances settled!", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                onError = { error ->
+                                    android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
+                                }
+                            )
+                        }) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = "Settle Up")
+                        }
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete Group", tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                )
+            }
         },
         floatingActionButton = {
             FloatingActionButton(
@@ -152,57 +206,62 @@ fun GroupDetailScreen(groupId: String?, viewModel: MainViewModel, navController:
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.padding(padding)) {
                 // Group Header Summary
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                if (!isSearchMode) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
-                        val userBalance = group.balances[currentUserId] ?: 0.0
-                        Text("Your Balance", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(
-                            if (userBalance >= 0) "You are owed ₹${String.format(Locale.US, "%.2f", userBalance)}" 
-                            else "You owe ₹${String.format(Locale.US, "%.2f", -userBalance)}",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (userBalance >= 0) Color(0xFF17B890) else Color(0xFFEF4444)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = { 
-                                groupId?.let { 
-                                    viewModel.settleGroup(it,
-                                        onSuccess = {
-                                            showSettlementDialog = true
-                                            android.widget.Toast.makeText(context, "Group balances settled!", android.widget.Toast.LENGTH_SHORT).show()
-                                        },
-                                        onError = { error ->
-                                            android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
-                                        }
-                                    ) 
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                            shape = RoundedCornerShape(8.dp)
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("Settle up")
+                            val userBalance = group.balances[currentUserId] ?: 0.0
+                            Text("Your Balance", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (userBalance >= 0) "You are owed ₹${String.format(Locale.US, "%.2f", userBalance)}" 
+                                else "You owe ₹${String.format(Locale.US, "%.2f", -userBalance)}",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (userBalance >= 0) Color(0xFF17B890) else Color(0xFFEF4444)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { 
+                                    groupId?.let { 
+                                        viewModel.settleGroup(it,
+                                            onSuccess = {
+                                                showSettlementDialog = true
+                                                android.widget.Toast.makeText(context, "Group balances settled!", android.widget.Toast.LENGTH_SHORT).show()
+                                            },
+                                            onError = { error ->
+                                                android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        ) 
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Settle up")
+                            }
                         }
                     }
                 }
 
-                if (groupExpenses.isEmpty()) {
+                if (filteredGroupExpenses.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No expenses in this group yet.", color = Color.Gray)
+                        Text(
+                            if (searchQuery.isEmpty()) "No expenses in this group yet." else "No expenses found matching \"$searchQuery\"", 
+                            color = Color.Gray
+                        )
                     }
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(groupExpenses) { expense ->
+                        items(filteredGroupExpenses) { expense ->
                             val payerName = if (expense.paidBy == currentUserId) "You" else (usersMap[expense.paidBy]?.name ?: "Someone")
                             GroupExpenseItem(
                                 expense = expense,
